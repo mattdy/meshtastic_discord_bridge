@@ -10,12 +10,15 @@ import meshtastic.tcp_interface
 import meshtastic.serial_interface
 import queue
 import time
+import logging
 from datetime import datetime
 
 load_dotenv()
 token = os.getenv("DISCORD_TOKEN")
 channel_id = int(os.getenv("DISCORD_CHANNEL_ID"))
 meshtastic_hostname = os.getenv("MESHTASTIC_HOSTNAME")
+node_list= []
+local_channels = []
 
 meshtodiscord = queue.Queue()
 discordtomesh = queue.Queue()
@@ -29,21 +32,26 @@ def onReceiveMesh(packet, interface):
     """called when a packet arrives from mesh"""
     try: 
         if packet['decoded']['portnum']=='TEXT_MESSAGE_APP': #only interest in text packets for now
-            meshtodiscord.put( ("DM" if packet['toId'].startswith("!") else "Message") + " from **" + packet['fromId'] + "**:\n> " + packet['decoded']['text'])
+            fromId=packet['fromId']
+            fromName = next((node.longname for node in node_list if node.id == fromId), "Unknown")
+            channelIndex = packet['channel']
+            channelName = "Primary" if channelIndex == 0 else next((channel.settings.name for channel in local_channels[1:] if channel.index == channelIndex), "CH" + str(channelIndex))
+            meshtodiscord.put( "# 📨 New " +  ("DM" if packet['toId'].startswith("!") else ("Message in " + channelName)) + "\n**" + fromName + "** (" + fromId + "):\n> " + packet['decoded']['text'])
     except KeyError as e: #catch empty packet
         pass
 
 class Node:
-    def __init__(self, id, num, longname, hopsaway, snr, lastheardutc):
+    def __init__(self, id, num, shortname, longname, hopsaway, snr, lastheardutc):
         self.id = id
         self.num = num
+        self.shortname = shortname
         self.longname = longname
         self.hopsaway = hopsaway
         self.snr = snr
         self.lastheardutc = lastheardutc
 
     def __str__(self):
-        return f"**{self.longname}** (num:`{self.num}`, id:`{self.id}`, hops:`{self.hopsaway}`, snr:`{self.snr}`, lastheardutc:`{self.lastheardutc}`)"
+        return f"__**{self.shortname}**__  **{self.longname}** (num:`{self.num}`, id:`{self.id}`, hops:`{self.hopsaway}`, snr:`{self.snr}`, lastheardutc:`{self.lastheardutc}`)"
 
 class MyClient(discord.Client):
     def __init__(self, *args, **kwargs):
@@ -89,40 +97,45 @@ class MyClient(discord.Client):
                 discordtomesh.put("nodenum="+str(nodenum)+ " "+tempmessage)
             except:
                 await message.channel.send('Could not send message')
-                 
- 
-
         if message.content.startswith('$activenodes'):
             nodelistq.put("just pop a message on this queue so we know to send nodelist to discord")
+            
+    async def connect_to_meshtastic(self):
+        try:
+            if len(meshtastic_hostname) > 1:
+                print("Trying TCP interface to " + meshtastic_hostname)
+                iface = meshtastic.tcp_interface.TCPInterface(meshtastic_hostname)
+            else:
+                print("Trying serial interface")
+                iface = meshtastic.serial_interface.SerialInterface()
+        except Exception as ex:
+            print(f"Error: Could not connect {ex}")
+            sys.exit(1)
+        return iface
 
 
     async def my_background_task(self):
         await self.wait_until_ready()
         counter = 0
-        node_list= []
         channel = self.get_channel(channel_id) 
         pub.subscribe(onReceiveMesh, "meshtastic.receive")
         pub.subscribe(onConnectionMesh, "meshtastic.connection.established")
-        try:
-            if len(meshtastic_hostname)>1:
-                print("Trying TCP interface to "+meshtastic_hostname)
-                iface = meshtastic.tcp_interface.TCPInterface(meshtastic_hostname)
-            else:
-                print("Trying serial interface")
-                iface =  meshtastic.serial_interface.SerialInterface()
-        except Exception as ex:
-            print(f"Error: Could not connect {ex}")
-            sys.exit(1)
+        iface = await self.connect_to_meshtastic()
         while not self.is_closed():
             counter += 1
-            print(counter)
+            print(str(counter))
+            if (counter%12==11):
+                iface = await self.connect_to_meshtastic()
             if (counter%12==1):
                 #approx 1 minute (every 12th call, call every 5 seconds), refresh node list
+                for localChannel in iface._localChannels:
+                    local_channels.append(localChannel)
                 nodes=iface.nodes
                 for node in nodes:
                     try:
                             id = str(nodes[node]['user']['id'])
                             num = str(nodes[node]['num'])
+                            shortname = str(nodes[node]['user']['shortName'])
                             longname = str(nodes[node]['user']['longName'])
                             if "hopsAway" in nodes[node]:
                                 hopsaway = str(nodes[node]['hopsAway'])
@@ -140,11 +153,12 @@ class MyClient(discord.Client):
                                 #Use this if you want to assign a time in the past: ts=time.time()-(16*60)
                                 timestr="Unknown"
                             #Use this if you want to filter on time: if ts>time.time()-(15*60):
-                            node_list.append(Node(id, num, longname, hopsaway, snr, timestr))
-                            print(node_list[-1])
+                            node_list.append(Node(id, num, shortname, longname, hopsaway, snr, timestr))
+                            # print(node_list[-1])
                     except KeyError as e:
                         print(e)
                         pass
+                print("Node list updated")
             try:
                 meshmessage=meshtodiscord.get_nowait()
                 await channel.send(meshmessage)
