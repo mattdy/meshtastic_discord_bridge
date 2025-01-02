@@ -33,6 +33,18 @@ def onReceiveMesh(packet, interface):
     except KeyError as e: #catch empty packet
         pass
 
+class Node:
+    def __init__(self, id, num, longname, hopsaway, snr, lastheardutc):
+        self.id = id
+        self.num = num
+        self.longname = longname
+        self.hopsaway = hopsaway
+        self.snr = snr
+        self.lastheardutc = lastheardutc
+
+    def __str__(self):
+        return f"**{self.longname}** (num:`{self.num}`, id:`{self.id}`, hops:`{self.hopsaway}`, snr:`{self.snr}`, lastheardutc:`{self.lastheardutc}`)"
+
 class MyClient(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -87,7 +99,7 @@ class MyClient(discord.Client):
     async def my_background_task(self):
         await self.wait_until_ready()
         counter = 0
-        nodelist=""
+        node_list= []
         channel = self.get_channel(channel_id) 
         pub.subscribe(onReceiveMesh, "meshtastic.receive")
         pub.subscribe(onConnectionMesh, "meshtastic.connection.established")
@@ -106,7 +118,6 @@ class MyClient(discord.Client):
             print(counter)
             if (counter%12==1):
                 #approx 1 minute (every 12th call, call every 5 seconds), refresh node list
-                nodelist="# Node list:"
                 nodes=iface.nodes
                 for node in nodes:
                     try:
@@ -129,8 +140,8 @@ class MyClient(discord.Client):
                                 #Use this if you want to assign a time in the past: ts=time.time()-(16*60)
                                 timestr="Unknown"
                             #Use this if you want to filter on time: if ts>time.time()-(15*60):
-                            nodelist=nodelist+"\n**"+ longname + "** (num:`"+num+"`, id:`" + id + "`, hops:`" + hopsaway + "`, snr:`"+snr+"`, lastheardutc:`"+ timestr + "`)" 
-                            #print(nodelist)
+                            node_list.append(Node(id, num, longname, hopsaway, snr, timestr))
+                            print(node_list[-1])
                     except KeyError as e:
                         print(e)
                         pass
@@ -153,14 +164,13 @@ class MyClient(discord.Client):
             try:
                 nodelistq.get_nowait()
                 #if there's any item on this queue, we'll send the nodelist
-                lines=nodelist.splitlines()
                 packet=""
-                for index,line in enumerate(lines):
-                    if len(packet)+len(line) < 1900:
-                        packet=packet+line+"\n"
+                for node in node_list:
+                    if len(packet)+len(str(node)) < 1900:
+                        packet=packet+str(node)+"\n"
                     else:
                         await channel.send(packet)
-                        packet=line+"\n"
+                        packet=str(node)+"\n"
                 await channel.send(packet)
                 nodelistq.task_done()
             except queue.Empty:
