@@ -29,7 +29,7 @@ def onReceiveMesh(packet, interface):
     """called when a packet arrives from mesh"""
     try: 
         if packet['decoded']['portnum']=='TEXT_MESSAGE_APP': #only interest in text packets for now
-            meshtodiscord.put("Node "+packet['fromId']+" writes to node "+packet['toId']+ " this message: " +packet['decoded']['text'])
+            meshtodiscord.put( ("DM" if packet['toId'].startswith("!") else "Message") + " from **" + packet['fromId'] + "**:\n> " + packet['decoded']['text'])
     except KeyError as e: #catch empty packet
         pass
 
@@ -64,7 +64,7 @@ class MyClient(discord.Client):
         if message.content.startswith('$sendprimary'):
             tempmessage=str(message.content)
             tempmessage=tempmessage[tempmessage.find(' ')+1:225] #could be 228
-            await message.channel.send('Sending the following message to the primary channel:\n'+tempmessage)
+            await message.channel.send('Sending to the primary channel:\n> '+tempmessage)
             discordtomesh.put(tempmessage)
 
         if message.content.startswith('$send nodenum='):
@@ -73,7 +73,7 @@ class MyClient(discord.Client):
             tempmessage=tempmessage[tempmessage.find(' ',14)+1:225] #could be 228
             try:
                 nodenum=int(nodenumstr)
-                await message.channel.send('Sending the following message:\n'+tempmessage+'\nto nodenum:\n'+str(nodenum))
+                await message.channel.send('Sending  to **' + str(nodenum) + '**:\n> ' + tempmessage)
                 discordtomesh.put("nodenum="+str(nodenum)+ " "+tempmessage)
             except:
                 await message.channel.send('Could not send message')
@@ -106,7 +106,7 @@ class MyClient(discord.Client):
             print(counter)
             if (counter%12==1):
                 #approx 1 minute (every 12th call, call every 5 seconds), refresh node list
-                nodelist="Node list:\n"
+                nodelist="# Node list:"
                 nodes=iface.nodes
                 for node in nodes:
                     try:
@@ -129,8 +129,8 @@ class MyClient(discord.Client):
                                 #Use this if you want to assign a time in the past: ts=time.time()-(16*60)
                                 timestr="Unknown"
                             #Use this if you want to filter on time: if ts>time.time()-(15*60):
-                            nodelist=nodelist+"\nid:"+id + ", num:"+num+", longname:" + longname + ", hops:" + hopsaway + ", snr:"+snr+", lastheardutc:"+timestr 
-                            print(nodelist)
+                            nodelist=nodelist+"\n**"+ longname + "** (num:`"+num+"`, id:`" + id + "`, hops:`" + hopsaway + "`, snr:`"+snr+"`, lastheardutc:`"+ timestr + "`)" 
+                            #print(nodelist)
                     except KeyError as e:
                         print(e)
                         pass
