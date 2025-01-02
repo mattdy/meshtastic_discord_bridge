@@ -124,8 +124,6 @@ class MyClient(discord.Client):
         while not self.is_closed():
             counter += 1
             print(str(counter))
-            if (counter%12==11):
-                iface = await self.connect_to_meshtastic()
             if (counter%12==1):
                 #approx 1 minute (every 12th call, call every 5 seconds), refresh node list
                 for localChannel in iface._localChannels:
