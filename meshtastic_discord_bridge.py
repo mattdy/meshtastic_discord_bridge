@@ -133,6 +133,7 @@ class MyClient(discord.Client):
                 for localChannel in iface._localChannels:
                     local_channels.append(localChannel)
                 nodes=iface.nodes
+                node_list= [] # Empty node list so we only ever have our latest info
                 for node in nodes:
                     try:
                             id = str(nodes[node]['user']['id'])
