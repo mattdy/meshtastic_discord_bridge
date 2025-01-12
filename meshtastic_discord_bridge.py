@@ -30,14 +30,19 @@ def onConnectionMesh(interface, topic=pub.AUTO_TOPIC):
 
 def onReceiveMesh(packet, interface):  
     """called when a packet arrives from mesh"""
+    print(f'Received from mesh: {packet}')
     try: 
         if packet['decoded']['portnum']=='TEXT_MESSAGE_APP': #only interest in text packets for now
             fromId=packet['fromId']
             fromName = next((node.longname for node in node_list if node.id == fromId), "Unknown")
-            channelIndex = packet['channel']
-            channelName = "Primary" if channelIndex == 0 else next((channel.settings.name for channel in local_channels[1:] if channel.index == channelIndex), "CH" + str(channelIndex))
+            if 'channel' in packet:
+              channelIndex = packet['channel']
+              channelName = next((channel.settings.name for channel in local_channels[1:] if channel.index == channelIndex), "CH" + str(channelIndex))
+            else:
+              channelName = "Primary"
             meshtodiscord.put( "# 📨 New " +  ("DM" if packet['toId'].startswith("!") else ("Message in " + channelName)) + "\n**" + fromName + "** (" + fromId + "):\n> " + packet['decoded']['text'])
     except KeyError as e: #catch empty packet
+        print(f'KeyError while handling packet: {e}')
         pass
 
 class Node:
